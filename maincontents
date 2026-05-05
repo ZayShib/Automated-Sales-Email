@@ -1,0 +1,87 @@
+const SHEET_NAME  = "Sheet1";            // update if your tab has a different name
+const GROQ_API_KEY = "your_api_key"; // free at console.groq.com
+const YOUR_NAME    = "Alex Foss";
+const YOUR_COMPANY = "Your_company";
+
+const COL = {
+  name:          0,
+  website:       1,
+  category:      2,
+  square_signal: 3,
+  email:         4,
+  phone:         5,
+  city:          6,
+  state:         7,
+  instagram:     8,
+  notes:         9,
+  status:        10,
+};
+
+function sendOutreachEmails() {
+  const sheet = SpreadsheetApp
+    .getActiveSpreadsheet()
+    .getSheetByName(SHEET_NAME);
+  const rows = sheet.getDataRange().getValues();
+
+  for (let i = 1; i < rows.length; i++) {
+    const row    = rows[i];
+    const email  = row[COL.email];
+    const status = row[COL.status];
+
+    if (status === "Sent" || !email) continue;
+
+    const biz = {
+      name:          row[COL.name],
+      website:       row[COL.website],
+      category:      row[COL.category],
+      square_signal: row[COL.square_signal],
+      city:          row[COL.city],
+      state:         row[COL.state],
+      instagram:     row[COL.instagram],
+      notes:         row[COL.notes],
+    };
+
+    // One Groq call returns both subject + body
+    const { subject, body } = generateEmail(biz);
+
+    GmailApp.sendEmail(email, subject, "", {
+      htmlBody: body,
+      name: YOUR_NAME,
+    });
+
+    sheet.getRange(i + 1, COL.status + 1).setValue("Sent");
+    Utilities.sleep(1200);
+  }
+
+  Browser.msgBox("✓ All outreach emails sent!");
+}
+
+function generateEmail(biz) {
+  const res = UrlFetchApp.fetch(
+    "https://api.groq.com/openai/v1/chat/completions", {
+      method: "post",
+      contentType: "application/json",
+      headers: { "Authorization": `Bearer ${GROQ_API_KEY}` },
+      payload: JSON.stringify({
+        model: "llama3-70b-8192",
+        max_tokens: 600,
+        messages: [
+          { role: "system", content: systemPrompt() },
+          { role: "user",   content: userPrompt(biz) }
+        ]
+      })
+    }
+  );
+
+  const data = JSON.parse(res.getContentText());
+  const raw  = data.choices[0].message.content;
+
+  return parseResponse(raw);
+}
+
+function onOpen() {
+  SpreadsheetApp.getUi()
+    .createMenu("📧 Outreach")
+    .addItem("Send Emails", "sendOutreachEmails")
+    .addToUi();
+}
